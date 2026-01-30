@@ -1,0 +1,110 @@
+## Common Errors Faced During Fine-tuning (LoRA  / TPU)
+
+This section documents the major errors I faced during model fine-tuning and deployment, along with their root causes and solutions. These issues are common when working with **Hugging Face Transformers**, **PEFT (LoRA/QLoRA)**, and **TPU / Colab environments**.
+
+---
+
+### 1. `cannot access local variable 'active_adapters' where it is not associated with a value`
+
+**Cause**
+This error usually occurs when:
+
+* The LoRA adapter is not properly loaded before merging
+* `merge_and_unload()` is called without an active adapter
+* The model was moved across devices (TPU → CPU) incorrectly
+
+**Solution**
+
+* Ensure the adapter is loaded explicitly using `PeftModel.from_pretrained()`
+* Call `model.set_adapter()` before merging
+* Merge only after switching the model to CPU
+
+**Fix (High-level):**
+
+* Load base model
+* Load LoRA adapter
+* Set adapter as active
+* Move model to CPU
+* Merge and save
+
+---
+
+### 2. Model Saved but Only Adapter Files Are Generated
+
+**Symptoms**
+
+* Output directory contains:
+
+  * `adapter_config.json`
+  * `adapter_model.safetensors`
+* No standalone `pytorch_model.bin` or `model.safetensors`
+
+**Cause**
+This is expected behavior when training with LoRA/QLoRA. Only adapter weights are saved by default.
+
+**Solution**
+
+* Merge LoRA adapter with the base model using `merge_and_unload()`
+* Save the merged model explicitly
+
+**Key Learning**
+LoRA ≠ standalone model unless merged.
+
+---
+
+### 3. TPU Training: Model Not Saving Properly
+
+**Cause**
+TPUs do not support direct saving of models the same way GPUs do. Saving from TPU memory can lead to incomplete or corrupted checkpoints.
+
+**Solution**
+
+* Move the model to CPU before saving
+* Avoid saving checkpoints mid-training on TPU
+
+**Best Practice**
+Save only the final merged model after switching to CPU.
+
+
+### 4. `trainer.model.to("cpu")` Causes Unexpected Issues
+
+**Cause**
+The `Trainer` internally manages devices. Manually moving the model can break internal references.
+
+**Solution**
+
+* Access `trainer.model`
+* Move it to CPU only once training is fully complete
+* Avoid mixing `accelerate`, TPU, and manual `.to()` calls
+
+---
+
+### 5. Error While Uploading Model to Hugging Face Hub
+
+**Common Issues**
+
+* Missing `config.json`
+* Pushing adapter instead of merged model
+* Repository not initialized properly
+
+**Solution**
+
+* Ensure merged model contains:
+
+  * `config.json`
+  * `model.safetensors` or `pytorch_model.bin`
+  * `tokenizer.json`
+* Use `huggingface-cli login`
+* Push only required files
+
+
+---
+
+### Key Takeaways
+
+* LoRA training saves adapters, not full models
+* TPU requires careful device handling
+* Always merge adapters before demo or deployment
+
+
+
